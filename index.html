@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Peptide Tracker</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Lucide icons as inline SVGs
+        const PlusIcon = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        );
+
+        const XIcon = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        );
+
+        const CalendarIcon = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+        );
+
+        const Edit2Icon = ({ size = 18 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+            </svg>
+        );
+
+        const Trash2Icon = ({ size = 18 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+        );
+
+        const BellIcon = ({ size = 16 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+        );
+
+        function PeptideTracker() {
+            const [injections, setInjections] = useState([]);
+            const [reminders, setReminders] = useState([]);
+            const [showForm, setShowForm] = useState(false);
+            const [showReminderForm, setShowReminderForm] = useState(false);
+            const [editingId, setEditingId] = useState(null);
+            const [formData, setFormData] = useState({
+                date: new Date().toISOString().split('T')[0],
+                peptide: '',
+                dosage: '',
+                unit: 'mg',
+                site: '',
+                notes: ''
+            });
+            const [reminderData, setReminderData] = useState({
+                peptide: '',
+                intervalDays: 3,
+                lastInjectionDate: new Date().toISOString().split('T')[0]
+            });
+
+            // Auto-populate last injection date when peptide is selected
+            const handlePeptideSelect = (selectedPeptide) => {
+                setReminderData(prev => {
+                    const newData = { ...prev, peptide: selectedPeptide };
+                    
+                    if (selectedPeptide) {
+                        // Find the most recent injection for this peptide
+                        const peptideInjections = injections
+                            .filter(inj => inj.peptide === selectedPeptide)
+                            .sort((a, b) => new Date(b.date) - new Date(a.date));
+                        
+                        if (peptideInjections.length > 0) {
+                            newData.lastInjectionDate = peptideInjections[0].date;
+                        }
+                    }
+                    
+                    return newData;
+                });
+            };
+
+            useEffect(() => {
+                const saved = localStorage.getItem('peptideInjections');
+                if (saved) {
+                    try {
+                        setInjections(JSON.parse(saved));
+                    } catch (e) {
+                        console.error('Error loading data:', e);
+                    }
+                }
+                
+                const savedReminders = localStorage.getItem('peptideReminders');
+                if (savedReminders) {
+                    try {
+                        setReminders(JSON.parse(savedReminders));
+                    } catch (e) {
+                        console.error('Error loading reminders:', e);
+                    }
+                }
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('peptideInjections', JSON.stringify(injections));
+            }, [injections]);
+            
+            useEffect(() => {
+                localStorage.setItem('peptideReminders', JSON.stringify(reminders));
+            }, [reminders]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (editingId) {
+                    setInjections(injections.map(inj => 
+                        inj.id === editingId ? { ...formData, id: editingId } : inj
+                    ));
+                    setEditingId(null);
+                } else {
+                    setInjections([...injections, { ...formData, id: Date.now() }]);
+                }
+                resetForm();
+            };
+
+            const resetForm = () => {
+                setFormData({
+                    date: new Date().toISOString().split('T')[0],
+                    peptide: '',
+                    dosage: '',
+                    unit: 'mg',
+                    site: '',
+                    notes: ''
+                });
+                setShowForm(false);
+                setEditingId(null);
+            };
+
+            const handleEdit = (injection) => {
+                setFormData({
+                    date: injection.date,
+                    peptide: injection.peptide,
+                    dosage: injection.dosage,
+                    unit: injection.unit,
+                    site: injection.site,
+                    notes: injection.notes
+                });
+                setEditingId(injection.id);
+                setShowForm(true);
+            };
+
+            const handleDelete = (id) => {
+                if (confirm('Are you sure you want to delete this injection record?')) {
+                    setInjections(injections.filter(inj => inj.id !== id));
+                }
+            };
+            
+            const handleReminderSubmit = (e) => {
+                e.preventDefault();
+                const newReminder = {
+                    id: Date.now(),
+                    peptide: reminderData.peptide,
+                    intervalDays: parseInt(reminderData.intervalDays),
+                    lastInjectionDate: reminderData.lastInjectionDate
+                };
+                setReminders([...reminders, newReminder]);
+                setReminderData({
+                    peptide: '',
+                    intervalDays: 3,
+                    lastInjectionDate: new Date().toISOString().split('T')[0]
+                });
+                setShowReminderForm(false);
+            };
+            
+            const deleteReminder = (id) => {
+                if (confirm('Are you sure you want to delete this reminder?')) {
+                    setReminders(reminders.filter(r => r.id !== id));
+                }
+            };
+            
+            const getNextInjectionDate = (lastDate, intervalDays) => {
+                const next = new Date(lastDate);
+                next.setDate(next.getDate() + intervalDays);
+                return next;
+            };
+            
+            const getDaysUntil = (targetDate) => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const target = new Date(targetDate);
+                target.setHours(0, 0, 0, 0);
+                const diff = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+                return diff;
+            };
+            
+            const getUniquePeptides = () => {
+                const peptides = [...new Set(injections.map(inj => inj.peptide))];
+                return peptides.sort();
+            };
+
+            const sortedInjections = [...injections].sort((a, b) => 
+                new Date(b.date) - new Date(a.date)
+            );
+
+            const formatDate = (dateString) => {
+                return new Date(dateString).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+            };
+
+            const thisMonthCount = injections.filter(inj => {
+                const injDate = new Date(inj.date);
+                const now = new Date();
+                return injDate.getMonth() === now.getMonth() && 
+                       injDate.getFullYear() === now.getFullYear();
+            }).length;
+
+            return (
+                <div className="min-h-screen p-4">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-gray-800">Peptide Tracker</h1>
+                                    <p className="text-gray-600 mt-1">Track your weekly injections</p>
+                                </div>
+                                <button
+                                    onClick={() => setShowForm(!showForm)}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-3 shadow-lg transition-colors"
+                                >
+                                    {showForm ? <XIcon /> : <PlusIcon />}
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 mt-6">
+                                <div className="bg-indigo-50 rounded-xl p-4">
+                                    <div className="text-sm text-gray-600">Total Injections</div>
+                                    <div className="text-2xl font-bold text-indigo-600">{injections.length}</div>
+                                </div>
+                                <div className="bg-purple-50 rounded-xl p-4">
+                                    <div className="text-sm text-gray-600">This Month</div>
+                                    <div className="text-2xl font-bold text-purple-600">{thisMonthCount}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {showForm && (
+                            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                                <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                                    {editingId ? 'Edit Injection' : 'Log New Injection'}
+                                </h2>
+                                <form onSubmit={handleSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                        <input
+                                            type="date"
+                                            value={formData.date}
+                                            onChange={(e) => setFormData({...formData, date: e.target.value})}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Peptide Name</label>
+                                        <input
+                                            type="text"
+                                            value={formData.peptide}
+                                            onChange={(e) => setFormData({...formData, peptide: e.target.value})}
+                                            placeholder="e.g., BPC-157, TB-500"
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Dosage</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                value={formData.dosage}
+                                                onChange={(e) => setFormData({...formData, dosage: e.target.value})}
+                                                placeholder="250"
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                                            <select
+                                                value={formData.unit}
+                                                onChange={(e) => setFormData({...formData, unit: e.target.value})}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            >
+                                                <option value="mcg">mcg</option>
+                                                <option value="mg">mg</option>
+                                                <option value="IU">IU</option>
+                                                <option value="mL">mL</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Injection Site</label>
+                                        <select
+                                            value={formData.site}
+                                            onChange={(e) => setFormData({...formData, site: e.target.value})}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            required
+                                        >
+                                            <option value="">Select site...</option>
+                                            <option value="Abdomen">Abdomen</option>
+                                            <option value="Thigh (Left)">Thigh (Left)</option>
+                                            <option value="Thigh (Right)">Thigh (Right)</option>
+                                            <option value="Upper Arm (Left)">Upper Arm (Left)</option>
+                                            <option value="Upper Arm (Right)">Upper Arm (Right)</option>
+                                            <option value="Glute (Left)">Glute (Left)</option>
+                                            <option value="Glute (Right)">Glute (Right)</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
+                                        <textarea
+                                            value={formData.notes}
+                                            onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                                            placeholder="Any observations or side effects..."
+                                            rows="3"
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            type="submit"
+                                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                                        >
+                                            {editingId ? 'Update' : 'Save'} Injection
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={resetForm}
+                                            className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 rounded-lg transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+
+                        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                            <h2 className="text-xl font-semibold text-gray-800 mb-4">Injection History</h2>
+                            
+                            {sortedInjections.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <CalendarIcon size={48} className="mx-auto text-gray-300 mb-3" />
+                                    <p className="text-gray-500">No injections logged yet</p>
+                                    <p className="text-sm text-gray-400 mt-1">Click the + button to add your first entry</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {sortedInjections.map((injection) => (
+                                        <div
+                                            key={injection.id}
+                                            className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <h3 className="font-semibold text-lg text-gray-800">
+                                                            {injection.peptide}
+                                                        </h3>
+                                                        <span className="bg-indigo-100 text-indigo-700 text-xs font-medium px-2 py-1 rounded-full">
+                                                            {injection.dosage} {injection.unit}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-sm text-gray-600 space-y-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <CalendarIcon size={14} />
+                                                            <span>{formatDate(injection.date)}</span>
+                                                        </div>
+                                                        <div>📍 {injection.site}</div>
+                                                        {injection.notes && (
+                                                            <div className="text-gray-500 italic mt-2">{injection.notes}</div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleEdit(injection)}
+                                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Edit2Icon size={18} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(injection.id)}
+                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Trash2Icon size={18} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-semibold text-gray-800">Injection Reminders</h2>
+                                <button
+                                    onClick={() => setShowReminderForm(!showReminderForm)}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2"
+                                >
+                                    <BellIcon size={16} />
+                                    {showReminderForm ? 'Cancel' : 'New Reminder'}
+                                </button>
+                            </div>
+
+                            {showReminderForm && (
+                                <div className="bg-purple-50 rounded-xl p-4 mb-4">
+                                    <form onSubmit={handleReminderSubmit} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Peptide
+                                            </label>
+                                            {getUniquePeptides().length > 0 ? (
+                                                <select
+                                                    value={reminderData.peptide}
+                                                    onChange={(e) => handlePeptideSelect(e.target.value)}
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                    required
+                                                >
+                                                    <option value="">Select peptide...</option>
+                                                    {getUniquePeptides().map(peptide => (
+                                                        <option key={peptide} value={peptide}>{peptide}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <div className="text-sm text-gray-600 italic">
+                                                    Log an injection first to create reminders
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {getUniquePeptides().length > 0 && (
+                                            <>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Inject every (days)
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={reminderData.intervalDays}
+                                                        onChange={(e) => setReminderData({...reminderData, intervalDays: e.target.value})}
+                                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Last injection date
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        value={reminderData.lastInjectionDate}
+                                                        onChange={(e) => setReminderData({...reminderData, lastInjectionDate: e.target.value})}
+                                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <button
+                                                    type="submit"
+                                                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                                                >
+                                                    Set Reminder
+                                                </button>
+                                            </>
+                                        )}
+                                    </form>
+                                </div>
+                            )}
+
+                            {reminders.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <BellIcon size={48} className="mx-auto text-gray-300 mb-3" />
+                                    <p className="text-gray-500">No reminders set</p>
+                                    <p className="text-sm text-gray-400 mt-1">Set a reminder to track your injection schedule</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {reminders.map((reminder) => {
+                                        const nextDate = getNextInjectionDate(reminder.lastInjectionDate, reminder.intervalDays);
+                                        const daysUntil = getDaysUntil(nextDate);
+                                        const isOverdue = daysUntil < 0;
+                                        const isDueToday = daysUntil === 0;
+                                        
+                                        return (
+                                            <div
+                                                key={reminder.id}
+                                                className={`border-2 rounded-xl p-4 ${
+                                                    isOverdue 
+                                                        ? 'border-red-300 bg-red-50' 
+                                                        : isDueToday 
+                                                        ? 'border-orange-300 bg-orange-50'
+                                                        : 'border-purple-200 bg-purple-50'
+                                                }`}
+                                            >
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1">
+                                                        <h3 className="font-semibold text-lg text-gray-800 mb-1">
+                                                            {reminder.peptide}
+                                                        </h3>
+                                                        <div className="text-sm text-gray-600 space-y-1">
+                                                            <div>📅 Every {reminder.intervalDays} day{reminder.intervalDays !== 1 ? 's' : ''}</div>
+                                                            <div>
+                                                                {isOverdue ? (
+                                                                    <span className="text-red-600 font-medium">
+                                                                        ⚠️ Overdue by {Math.abs(daysUntil)} day{Math.abs(daysUntil) !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                ) : isDueToday ? (
+                                                                    <span className="text-orange-600 font-medium">
+                                                                        🔔 Due today!
+                                                                    </span>
+                                                                ) : (
+                                                                    <span>
+                                                                        Next: {formatDate(nextDate)} ({daysUntil} day{daysUntil !== 1 ? 's' : ''})
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => deleteReminder(reminder.id)}
+                                                        className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                                                    >
+                                                        <Trash2Icon size={18} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                            <h3 className="font-semibold text-blue-900 mb-2">💡 Add to iPhone Home Screen</h3>
+                            <p className="text-sm text-blue-800">
+                                Tap the Share button in Safari, then "Add to Home Screen" to use this app like a native iPhone app.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<PeptideTracker />);
+    </script>
+</body>
+</html>
